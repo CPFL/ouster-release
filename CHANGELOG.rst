@@ -2,6 +2,14 @@
 Changelog for package ouster
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.1.5 (2019-03-13)
+------------------
+* updated package.xml
+
+0.1.4 (2019-03-13)
+------------------
+* Updated project name to follow ros standards
+
 0.1.3 (2019-03-06)
 ------------------
 * Updated LICENSE
