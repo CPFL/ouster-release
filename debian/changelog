@@ -1,0 +1,65 @@
+ros-melodic-ouster-driver (0.1.7-0bionic) bionic; urgency=high
+
+  * Sensor model and firmware version validation
+  * Added sensor model and firmware version validation. The driver currently only works for OS-1-64 and on firmware version 1.10 some configuration parameters disappeared.
+  * Parameter validation and new pointcloud types
+  * Added parameter validation to avoid reinitializing the LiDAR. Added new pointcloud types XYZIRF and XYZIRFN. Changed pulse_mode parameter from integer to string for readability. Updated the readme file.
+  * Contributors: Alexander Carballo, alexandrx
+
+ -- Alexander Carballo <miyamoto.musashi2@gmail.com>  Wed, 27 Mar 2019 15:00:00 -0000
+
+ros-melodic-ouster-driver (0.1.6-0bionic) bionic; urgency=high
+
+  * Renamed ouster_ros to ouster_driver
+
+ -- Alexander Carballo <miyamoto.musashi2@gmail.com>  Tue, 12 Mar 2019 15:00:00 -0000
+
+ros-melodic-ouster-driver (0.1.5-0bionic) bionic; urgency=high
+
+  * updated package.xml
+
+ -- Alexander Carballo <miyamoto.musashi2@gmail.com>  Tue, 12 Mar 2019 15:00:00 -0000
+
+ros-melodic-ouster-driver (0.1.4-0bionic) bionic; urgency=high
+
+  * Updated project name to follow ros standards
+
+ -- Alexander Carballo <miyamoto.musashi2@gmail.com>  Tue, 12 Mar 2019 15:00:00 -0000
+
+ros-melodic-ouster-driver (0.1.3-0bionic) bionic; urgency=high
+
+  * Updated LICENSE
+
+ -- Alexander Carballo <miyamoto.musashi2@gmail.com>  Tue, 05 Mar 2019 15:00:00 -0000
+
+ros-melodic-ouster-driver (0.1.2-0bionic) bionic; urgency=high
+
+  * Changed operation mode from integer to string to ease reading.
+  * New pointcloud mode format added
+  * Improved parameter documentation
+  * removed the old bool pointcloud_mode_xyzir parameter (to match Velodyne's mode) and replaced with a way to specify the desired pointcloud format, several options added including Ouster's native pointcloud format.
+  * Added install commands
+  * run CI on kinetic and melodic only
+  * Fixed launch file to deal with hidden parameters, fixed readme.md to update the TODO, fixed os1_node.cpp to reduce by half the scan duration variable in case of 20Hz operation.
+  * Updated the driver to support advanced parameter configuration (lidar-mode, pulse-mode and window-rejection-enable)
+  * Eliminated the ouster-ros static library
+  * Updated readme.md incorrect info for lidar address configuration.
+  * Switched to industrial-ci
+  * First commit for Autoware version branch. Modified the original Ouster ROS code to suit Autoware needs. Code structure is more simple, only ROS driver code is kept, and the readme.md file has more details on how to configure the sensor and use this driver. To further ease Autoware integration, Velodyne compatibility options were added and tested with nd-_matching, ray-ground-filter and euclidean-cluster nodes.
+  * Improve positional argument parsing in viz
+  * Use allocate-shared for Eigen compatibility
+  * Support building visualizer with newer VTK
+  * Readme tweaks and new example data
+  * Update readme.md
+  * updated the readme to include viz in the contents
+  * Initial commit of the example visualizer
+  * Uses VTK6 to display point clouds and range/intensity/noise images
+  * No dependencies other than VTK6, Eigen3, and a C++11 compiler
+  * Currently only supports linux; tested on multiple distributions and platforms
+  * Use correct units in sensor-msgs::Imu
+  * Deal with time going backwards in replays
+  * Contributors: Alexander Carballo, Dima Garbuzov, Roy Rinberg, alexandrx, amc-nu, hooic, rafficm, rrinberg
+
+ -- Alexander Carballo <miyamoto.musashi2@gmail.com>  Tue, 05 Mar 2019 15:00:00 -0000
+
+
