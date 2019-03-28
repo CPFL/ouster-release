@@ -4,6 +4,8 @@
 #include <cstring>
 #include <iostream>
 #include <memory>
+#include <vector>
+#include <algorithm>
 
 #include <arpa/inet.h>
 #include <netdb.h>
@@ -119,7 +121,7 @@ std::shared_ptr<client> init_client(const std::string& hostname,
     std::string cmd;
 
     auto do_cmd = [&](const std::string& op, const std::string& val) {
-        const size_t max_res_len = 64;
+        const size_t max_res_len = 4095;
         char read_buf[max_res_len + 1];
 
         ssize_t len;
@@ -127,48 +129,141 @@ std::shared_ptr<client> init_client(const std::string& hostname,
 
         len = write(sock_fd, cmd.c_str(), cmd.length());
         if (len != (ssize_t)cmd.length()) {
-            std::cerr << "init_client: failed to send command" << std::endl;
-            return false;
+            //std::cerr << "init_client: failed to send command" << std::endl;
+            return std::string("[error] init_client: failed to send command");
         }
 
         len = read(sock_fd, read_buf, max_res_len);
         if (len < 0) {
-            std::cerr << "read: " << std::strerror(errno) << std::endl;
-            return false;
+            //std::cerr << "read: " << std::strerror(errno) << std::endl;
+            return std::string("[error] read: ") + std::strerror(errno);
         }
         read_buf[len] = '\0';
 
         auto res = std::string(read_buf);
         res.erase(res.find_last_not_of(" \r\n\t") + 1);
         
-        if (res != op) {
-            std::cerr << "init_client: command \"" << cmd << "\" failed with \""
+        return res;
+    };
+    
+    auto do_cmd_chk = [&](const std::string& op, const std::string& val) {
+    	auto res = do_cmd(op, val);
+    	if (res.find("[error]") != std::string::npos) {
+    		std::cerr << res << std::endl;
+    		return false;
+    	} else if (res != op) {
+            std::cerr << "init_client: command \"" << op << " " << val << "\" failed with \""
                       << res << "\"" << std::endl;
             return false;
         }
         return true;
     };
+    
+    auto get_cmd = [&](const std::string& op, const std::string& val) {
+    	auto res = do_cmd(op, val);
+    	if (res.find("error") != std::string::npos) {
+    		std::cerr << res << std::endl;
+    		return std::string("");
+    	} 
+        return res;
+    };
+    
+    auto str_tok = [&](const std::string &str, const std::string delim) {
+    	auto start = str.find_first_not_of(delim);
+    	auto end = start;
+		std::vector<std::string> tokens;
+
+		while (start != std::string::npos){
+		    end = str.find_first_of(delim, start);
+		    tokens.push_back(str.substr(start, end-start));
+		    start = str.find_first_not_of(delim, end);
+		}
+		
+		return tokens;
+    };
 
     bool success = true;
-    success &= do_cmd("set_udp_port_lidar", std::to_string(lidar_port));
-    success &= do_cmd("set_udp_port_imu", std::to_string(imu_port));
-    success &= do_cmd("set_udp_ip", udp_dest_host);
+    success &= do_cmd_chk("set_udp_port_lidar", std::to_string(lidar_port));
+    success &= do_cmd_chk("set_udp_port_imu", std::to_string(imu_port));
+    success &= do_cmd_chk("set_udp_ip", udp_dest_host);
 
     if (!success) return std::shared_ptr<client>();
     
     /**
-     * @note Added to support advanced mode parameters configuration for Autoware
+     * @note Added to support advanced mode parameters configuration
      */
-    //setting advanced mode parameters
-    success &= do_cmd("set_config_param", "lidar_mode " + _operation_mode_str);
-    success &= do_cmd("set_config_param", "pulse_mode " + _pulse_mode_str);
-    success &= do_cmd("set_config_param", "window_rejection_enable " + _window_rejection_str);
+    //read the sensor information
+    std::string version_str = std::string("");
+    std::string product_str = std::string("");
+    bool has_pulsemode = true;
+    auto sensor_info_str = get_cmd("get_sensor_info", "");
+    auto tokens = str_tok(sensor_info_str, std::string(",: \""));
+    auto pos = std::find(tokens.begin(), tokens.end(), "build_rev");
+    if (pos != tokens.end()) {
+    	version_str = *(pos+1);
+    }
+    pos = std::find(tokens.begin(), tokens.end(), "prod_line");
+    if (pos != tokens.end()) {
+    	product_str = *(pos+1);
+    }
+    if (product_str == std::string("") || version_str == std::string("")) {
+		std::cout << "Error: Failed to read product name and firmware version." << std::endl;
+    	return std::shared_ptr<client>();    	
+    }
+    std::cout << "Ouster model \"" << product_str << "\", firmware version \"" << version_str << "\"" << std::endl;
+    //TODO: support OS-1-16 and OS-1-128
+    if (product_str != std::string("OS-1-64")) {
+    	std::cout << "Error: this driver currently only supports Ouster model \"OS-1-64\"." << std::endl;
+    	return std::shared_ptr<client>();
+    }
+    
+    auto ver_numbers = str_tok(version_str, std::string("v."));
+    //check the minor version
+    auto ver_major = std::stoi(ver_numbers[0], nullptr);
+    auto ver_minor = std::stoi(ver_numbers[1], nullptr);
+    if (ver_major < 1 || ver_minor < 7) {
+    	std::cout << "Error: Firmware version \"" << version_str << "\" is not supported, please upgrade" << std::endl;
+    	return std::shared_ptr<client>();
+    }
+    if (std::stoi(ver_numbers[1], nullptr) >= 10) {
+    	std::cout << "On firmware version \"" << version_str << "\" the \"pulse_mode\" parameter is no longer available, will ignore it." << std::endl;
+    	has_pulsemode = false;
+    }
+    
+    //read the current settings
+    auto curr_operation_mode_str = get_cmd("get_config_param", "active lidar_mode");
+    auto curr_pulse_mode_str = std::string("");
+    if (has_pulsemode) {
+    	curr_pulse_mode_str = get_cmd("get_config_param", "active pulse_mode");
+   	}
+    auto curr_window_rejection_str = get_cmd("get_config_param", "active window_rejection_enable");
+    bool do_configure = false;
+    success = true;
+    
+    //setting advanced mode parameters (if necessary)
+    if (curr_operation_mode_str != _operation_mode_str) {
+    	success &= do_cmd_chk("set_config_param", "lidar_mode " + _operation_mode_str);
+    	do_configure = true;
+   	}
+   	if (has_pulsemode && (curr_pulse_mode_str != _pulse_mode_str)) {
+	    success &= do_cmd_chk("set_config_param", "pulse_mode " + _pulse_mode_str);
+	    do_configure = true;
+    }
+    if (curr_window_rejection_str != _window_rejection_str) {
+		success &= do_cmd_chk("set_config_param", "window_rejection_enable " + _window_rejection_str);
+		do_configure = true;
+   	}
     
     if (!success) return std::shared_ptr<client>();
     
-    //reinitialize to take effect 
-    success &= do_cmd("reinitialize", "");
-    if (!success) return std::shared_ptr<client>();
+    //reinitialize to take effect (if necessary)
+	if (do_configure) {
+		success &= do_cmd_chk("reinitialize", "");
+		if (!success) return std::shared_ptr<client>();
+		std::cout << "Parameters configured, reinitializing sensor" << std::endl;
+   	} else {
+   		std::cout << "Parameters already configured, no need to reinitialize" << std::endl;
+   	}
     //----------------
     
     close(sock_fd);
@@ -225,25 +320,36 @@ bool read_imu_packet(const client& cli, uint8_t* buf) {
  * @note Added to support advanced mode parameters configuration for Autoware
  */
 //----------------
-void set_advanced_params(OperationMode operation_mode, PulseMode pulse_mode, bool window_rejection)
+void set_advanced_params(std::string operation_mode_str, std::string pulse_mode_str, bool window_rejection)
 {
-   _operation_mode = operation_mode;
-   _pulse_mode = pulse_mode;
+   _operation_mode_str = operation_mode_str;
+   _pulse_mode_str = pulse_mode_str;
    _window_rejection = window_rejection;
    
-   switch (_operation_mode) {
-       case MODE_512x10: _operation_mode_str = std::string("512x10"); break;
-       case MODE_1024x10: _operation_mode_str = std::string("1024x10"); break;
-       case MODE_2048x10: _operation_mode_str = std::string("2048x10"); break;
-       case MODE_512x20: _operation_mode_str = std::string("512x20"); break;
-       case MODE_1024x20: _operation_mode_str = std::string("1024x20"); break;
-       default: _operation_mode_str = std::string("1024x10"); break;
+   _operation_mode = ouster::OS1::MODE_1024x10;
+   if (_operation_mode_str == std::string("512x10")) {
+       _operation_mode = ouster::OS1::MODE_512x10;
+   } else if (_operation_mode_str == std::string("1024x10")) {
+       _operation_mode = ouster::OS1::MODE_1024x10;
+   } else if (_operation_mode_str == std::string("2048x10")) {
+       _operation_mode = ouster::OS1::MODE_2048x10;
+   } else if (_operation_mode_str == std::string("512x20")) {
+       _operation_mode = ouster::OS1::MODE_512x20;
+   } else if (_operation_mode_str == std::string("1024x20")) {
+       _operation_mode = ouster::OS1::MODE_1024x20;
+   } else {
+   	   std::cout << "Selected operation mode " << _operation_mode_str << " is invalid, using default mode \"1024x10\"" << std::endl;
    }
-   switch (_pulse_mode) {
-       case PULSE_STANDARD: _pulse_mode_str = std::string("STANDARD"); break;
-       case PULSE_NARROW: _pulse_mode_str = std::string("NARROW"); break;
-       default: _pulse_mode_str = std::string("STANDARD"); break;
+
+   _pulse_mode = ouster::OS1::PULSE_STANDARD;
+   if (_pulse_mode_str == std::string("STANDARD")) {
+   	   _pulse_mode = ouster::OS1::PULSE_STANDARD;
+   } else if (_pulse_mode_str == std::string("NARROW")) {
+   	   _pulse_mode = ouster::OS1::PULSE_NARROW;
+   } else {
+   	   std::cout << "Selected pulse mode " << _pulse_mode_str << " is invalid, using default mode \"STANDARD\"" << std::endl;
    }
+
    _window_rejection_str = ((_window_rejection) ? std::string("1") : std::string("0"));
 }
 //----------------
